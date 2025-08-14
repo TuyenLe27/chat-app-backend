@@ -13,7 +13,7 @@ const server = http.createServer(app);
 // Domain frontend trên Netlify
 const allowedOrigin = "https://chatapptlv27.netlify.app";
 
-// Cấu hình Socket.IO với CORS
+// Socket.IO với CORS
 const io = new Server(server, {
   cors: {
     origin: allowedOrigin,
@@ -21,22 +21,22 @@ const io = new Server(server, {
   },
 });
 
-// Cấu hình CORS cho Express API
+// Express CORS
 app.use(cors({
   origin: allowedOrigin,
   methods: ["GET", "POST"],
 }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" })); // tăng limit để nhận ảnh base64
 
 // Kết nối MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI, { dbName: "chatapp" })
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// Theo dõi người dùng online
+// Lưu user đang online
 const users = [];
 
-// Socket.io logic
+// Socket.io
 io.on('connection', async (socket) => {
   console.log('🔌 User connected:', socket.id);
 
@@ -48,18 +48,19 @@ io.on('connection', async (socket) => {
     console.error('❌ Error fetching messages:', err);
   }
 
-  // Xử lý người dùng tham gia
-  socket.on('userJoined', (username) => {
-    users.push({ id: socket.id, username });
-    io.emit('userList', users); // Gửi danh sách người dùng
-    io.emit('userJoined', `${username} đã tham gia chat`);
+  // Khi user join
+  socket.on('userJoined', ({ username, avatar }) => {
+    users.push({ id: socket.id, username, avatar });
+    io.emit('userList', users);
+    io.emit('userJoined', { username, avatar, text: `${username} đã tham gia chat` });
   });
 
-  // Xử lý gửi tin nhắn
+  // Khi user gửi tin nhắn
   socket.on('sendMessage', async (message) => {
     try {
       const newMessage = new Message({
         username: message.username,
+        avatar: message.avatar || "",
         text: message.text,
         createdAt: new Date(),
       });
@@ -70,14 +71,14 @@ io.on('connection', async (socket) => {
     }
   });
 
-  // Xử lý ngắt kết nối
+  // Khi user ngắt kết nối
   socket.on('disconnect', () => {
     const index = users.findIndex((user) => user.id === socket.id);
     if (index !== -1) {
       const username = users[index].username;
       users.splice(index, 1);
       io.emit('userList', users);
-      io.emit('userJoined', `${username} đã rời chat`);
+      io.emit('userJoined', { username, avatar: "", text: `${username} đã rời chat` });
     }
     console.log('❌ User disconnected:', socket.id);
   });
